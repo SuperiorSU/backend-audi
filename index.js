@@ -1,33 +1,58 @@
+// index.js
 const express = require('express');
+const cors = require('cors'); // Import CORS
 const { WebSocketServer } = require('ws');
+const http = require('http');
 
 const app = express();
-const port = 3000; // Adjust as needed
 
-// Serve frontend or static files if needed
-app.use(express.static('public'));
+// Step 2.2.1: Configure CORS
+const allowedOrigins = [
+  'https://your-frontend-domain.vercel.app', // Replace with your actual frontend URL
+  'http://localhost:3000', // For local development
+  // Add other origins if necessary
+];
 
-// WebSocket server
-const wss = new WebSocketServer({ noServer: true });
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
+      return callback(new Error(msg), false);
+    }
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST'],
+  credentials: true,
+}));
+
+app.use(express.json()); // To parse JSON bodies
+
+// Step 2.2.2: WebSocket Server Setup
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
 let panelClients = [];
 
-wss.on('connection', (ws) => {
-  console.log('A client connected');
+wss.on('connection', (ws, req) => {
+  console.log('A panel client connected');
+  panelClients.push(ws);
 
   ws.on('message', (message) => {
-    console.log('Received message:', message);
+    console.log('Received message from panel:', message);
+    // Handle messages from panel if needed
   });
 
   ws.on('close', () => {
-    console.log('Client disconnected');
+    console.log('A panel client disconnected');
+    panelClients = panelClients.filter(client => client !== ws);
   });
-
-  panelClients.push(ws);
 });
 
-// API to trigger LED countdown
+// Step 2.2.3: API Endpoint to Trigger Countdown
 app.post('/trigger-countdown', (req, res) => {
+  console.log('Trigger countdown API called');
   // Broadcast the countdown signal to all connected panel clients
   panelClients.forEach((client) => {
     if (client.readyState === client.OPEN) {
@@ -37,13 +62,8 @@ app.post('/trigger-countdown', (req, res) => {
   res.status(200).json({ message: 'Countdown triggered' });
 });
 
-const server = app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
-
-// Upgrade HTTP server to handle WebSocket requests
-server.on('upgrade', (request, socket, head) => {
-  wss.handleUpgrade(request, socket, head, (ws) => {
-    wss.emit('connection', ws, request);
-  });
+// Start the server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
