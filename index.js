@@ -5,7 +5,12 @@ const { WebSocketServer } = require('ws');
 const app = express();
 
 // Enable CORS for all routes
-app.use(cors());
+app.use(cors(
+    {
+        origin: 'https://frontend-audi.vercel.app/',
+        
+    }
+));
 
 const wss = new WebSocketServer({ noServer: true });
 
