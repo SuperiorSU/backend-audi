@@ -1,69 +1,62 @@
-// index.js
 const express = require('express');
-const cors = require('cors'); // Import CORS
+const cors = require('cors');
 const { WebSocketServer } = require('ws');
-const http = require('http');
 
 const app = express();
 
-// Step 2.2.1: Configure CORS
-const allowedOrigins = [
-  'https://your-frontend-domain.vercel.app', // Replace with your actual frontend URL
-  'http://localhost:3000', // For local development
-  // Add other origins if necessary
-];
+// Enable CORS for all routes
+app.use(cors());
 
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = `The CORS policy for this site does not allow access from the specified Origin: ${origin}`;
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
-  },
-  methods: ['GET', 'POST'],
-  credentials: true,
-}));
-
-app.use(express.json()); // To parse JSON bodies
-
-// Step 2.2.2: WebSocket Server Setup
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ noServer: true });
 
 let panelClients = [];
 
-wss.on('connection', (ws, req) => {
-  console.log('A panel client connected');
+// WebSocket connection handling
+wss.on('connection', (ws) => {
+  console.log('Panel connected');
   panelClients.push(ws);
 
+  // Listen for messages from the WebSocket
   ws.on('message', (message) => {
-    console.log('Received message from panel:', message);
-    // Handle messages from panel if needed
+    console.log('Message from client:', message);
+
+    // Broadcast message to all connected panels
+    panelClients.forEach((client) => {
+      if (client.readyState === ws.OPEN) {
+        client.send(message);
+      }
+    });
+  });
+
+  // Handle WebSocket close event
+  ws.on('close', () => {
+    console.log('Panel disconnected');
+    panelClients = panelClients.filter(client => client !== ws);
+  });
+
+  // Ping/Pong mechanism to keep connection alive
+  const interval = setInterval(() => {
+    if (ws.readyState === ws.OPEN) {
+      ws.ping();
+    }
+  }, 30000);
+
+  ws.on('pong', () => {
+    console.log('Received pong, connection is alive');
   });
 
   ws.on('close', () => {
-    console.log('A panel client disconnected');
-    panelClients = panelClients.filter(client => client !== ws);
+    clearInterval(interval);
   });
 });
 
-// Step 2.2.3: API Endpoint to Trigger Countdown
-app.post('/trigger-countdown', (req, res) => {
-  console.log('Trigger countdown API called');
-  // Broadcast the countdown signal to all connected panel clients
-  panelClients.forEach((client) => {
-    if (client.readyState === client.OPEN) {
-      client.send(JSON.stringify({ action: 'startCountdown' }));
-    }
-  });
-  res.status(200).json({ message: 'Countdown triggered' });
+// Handle WebSocket upgrade
+const server = app.listen(3000, () => {
+  console.log('Server running on port 3000');
 });
 
-// Start the server
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.on('upgrade', (request, socket, head) => {
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
 });
